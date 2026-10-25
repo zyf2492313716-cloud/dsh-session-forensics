@@ -127,6 +127,10 @@ function auditBatch(dir) {
     : { verdict: "del", reason: `现盘为超集（${logs.length} 条副本，用户消息均有落点）`, bytes, logs, others };
 }
 
+if (!fs.existsSync(BAK)) {
+  console.error(`备份目录不存在：${BAK}\n用 DSH_BAK_DIR 指定，或指向实际的备份根（如 <手术目录>/backups）。`);
+  process.exit(2);
+}
 const batches = fs.readdirSync(BAK, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name).sort();
 let delBytes = 0;
 const plan = []; // {batch, mode:'whole'|'logs-only', logs:[...]}
