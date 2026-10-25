@@ -33,6 +33,7 @@ DeepSeek Harness（DSH）把每个对话存成 `~/.dsh/sessions/<工程>/<会话
 | `boot-doctor.cjs` | 开机静默体检入口（注册到 HKCU Run，实测 60ms 返回不拖登录） |
 | `lib/safe-write.cjs` | **离线写会话日志的唯一入口**（见"三道防线"） |
 | `check-writers.cjs` | 静态护栏：揪出绕过闸门直写会话日志的脚本，退出码可接 CI |
+| `audit-backup-superset.cjs` | 备份清理器（fail-closed）：只有证明"现盘是备份的超集、且副本里的每条真用户消息在全库都有落点"才删；判不了的保留。曾以此回收 ~400MB 且零丢失 |
 | `migrate-tmp-rename.cjs` | 把历史脚本的 `writeFileSync(tmp)+renameSync` 一行迁移到闸门 |
 
 ## 六层校验（判"宿主能不能打开"的完整链条）
@@ -66,6 +67,8 @@ DeepSeek Harness（DSH）把每个对话存成 `~/.dsh/sessions/<工程>/<会话
    不持有日志句柄，实测 `FileShare.None` 照样打开）；写临时文件→真实链读回→原子替换→审计。
 2. **静态护栏 `check-writers.cjs`**：任何直写会话日志的新脚本在收尾检查里变红。
 3. **开机兜底 `boot-doctor.cjs`**：登录即全库体检（只读+报告），坏档不会静默躺到下次点开才暴露。
+   实测验证（真重启后）：报告 `mtime` 落在开机后 2 分钟、且 `hostAlive=false`（宿主未起的
+   安全窗口），证明这条链真的通电——注册了不等于跑了。
 
 ## 快速开始
 
