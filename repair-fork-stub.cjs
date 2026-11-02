@@ -130,7 +130,9 @@ function main() {
     log('\n=== ' + project + '\\' + id);
     log('    原件 ' + loaded.events.length + ' 事件 / ' + fs.statSync(file).size + ' 字节 / 读盘链 ' + (now.ok ? 'PASS' : 'FAIL ' + now.err));
     log('    切点 seq=' + built.seedIdx + '（本文件 ' + built.markers + ' 条 end-seed，此条 data.inherited=true），未闭合轮=' + built.openTurn);
-    log('    补入 ' + built.closers.map((c) => c.type + ' turn=' + c.data.turn + ' reason=' + c.data.reason.kind).join(', '));
+    // 注意：openTurnClosers 除 turn/end 外还会产出 tool/result / step/end（补未完成的工具调用），
+    // 那些没有 data.reason —— 硬取 .reason.kind 会崩（2026-11-02 实测）。
+    log('    补入 ' + built.closers.map((c) => c.type + (c.data.turn === void 0 ? '' : ' turn=' + c.data.turn) + (c.data.reason === void 0 ? '' : ' reason=' + c.data.reason.kind)).join(', '));
     log('    候选 ' + built.events.length + ' 事件 / ' + buf.length + ' 字节 / 完整读盘链 ' + (candCheck.ok ? 'PASS' : 'FAIL ' + candCheck.err));
     log('    无损证明 仅 seq 平移 ' + proof.shifted + ' / 逐字节相同 ' + proof.identical + ' / 新增 ' + proof.addedRows + ' 行 / 违规 ' + proof.problems.length + ' / 悬空引用 ' + proof.dangling.length);
     proof.problems.slice(0, 5).forEach((p) => log('      ! ' + p));
