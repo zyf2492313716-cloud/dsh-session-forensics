@@ -85,30 +85,42 @@ async function main() {
   // 复验不过就回滚），残骸是 move 不是删（manifest + rollback.ps1）；A/C 改的是既有正文，
   // 仍然只在用户显式 --fix 时才动。
   let eRepaired = 0, ghostsArchived = 0, headRepaired = 0, toolNotes = [];
-  if ((wantFix || wantSafeFix) && !host.alive) {
-    const runTool = (script) => {
+  if (wantFix || wantSafeFix) {
+    const runTool = (script, extraEnv) => {
       const r = spawnSync(process.execPath, [path.join(__dirname, script), 'apply'], {
         encoding: 'utf8',
-        env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+        env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', ...(extraEnv || {}) },
         windowsHide: true,
         maxBuffer: 32 * 1024 * 1024,
       });
       return (r.stdout || '') + (r.stderr || '');
     };
-    // 先补 protected head：既治"现在读不进"（BROKEN_NOW），也拆"下次续聊才炸"的雷（HEADLESS）。
-    // 排在 E 类与残骸之前——修成可读之后才谈得上归档残骸。
-    const hOut = runTool('repair-head-class.cjs');
-    const hm = hOut.match(/RESULT=HEADFIXED:(\d+)/);
-    headRepaired = hm ? Number(hm[1]) : 0;
-    toolNotes.push(...hOut.split('\n').filter((l) => /需要补头|落盘|拒绝|放弃|拒写|RESULT=/.test(l)).map((l) => '头类 ' + l.trim()));
-    const eOut = runTool('repair-fork-stub.cjs');
-    const em = eOut.match(/模式=apply 修好=(\d+)/);
-    eRepaired = em ? Number(em[1]) : 0;
-    toolNotes.push(...eOut.split('\n').filter((l) => /RESULT=|拒写|未通过自证|自证不过/.test(l)).map((l) => 'E类 ' + l.trim()));
-    const gOut = runTool('cleanup-ghost.cjs');
+    // 两类"重写日志"的修复只能在宿主退出后做（旧进程会按旧长度续写）。
+    if (!host.alive) {
+      // 先补 protected head：既治"现在读不进"（BROKEN_NOW），也拆"下次续聊才炸"的雷（HEADLESS）。
+      // 排在 E 类与残骸之前——修成可读之后才谈得上归档残骸。
+      const hOut = runTool('repair-head-class.cjs');
+      const hm = hOut.match(/RESULT=HEADFIXED:(\d+)/);
+      headRepaired = hm ? Number(hm[1]) : 0;
+      toolNotes.push(...hOut.split('\n').filter((l) => /需要补头|落盘|拒绝|放弃|拒写|RESULT=/.test(l)).map((l) => '头类 ' + l.trim()));
+      const eOut = runTool('repair-fork-stub.cjs');
+      const em = eOut.match(/模式=apply 修好=(\d+)/);
+      eRepaired = em ? Number(em[1]) : 0;
+      toolNotes.push(...eOut.split('\n').filter((l) => /RESULT=|拒写|未通过自证|自证不过/.test(l)).map((l) => 'E类 ' + l.trim()));
+    } else {
+      toolNotes.push('宿主在跑：跳过头类/E 类日志重写（要离线），只归档冷残骸');
+    }
+    // 残骸归档：宿主在线也做，但闸门更严——30 分钟没写过 + 日志必须能过完整读盘链。
+    // 依据：branch 复盘一般 1–3 分钟结束，30 分钟静置基本排除"还在写"；即便判断错，
+    // 动作是同卷 rename（不丢数据、有 manifest 与 rollback），最坏只是日志提前进归档。
+    // 离线时沿用 10 分钟、不做健康闸（反正紧接着就修）。
+    const gEnv = host.alive
+      ? { DSH_GHOST_MIN_AGE_MIN: '30', DSH_GHOST_REQUIRE_HEALTHY: '1' }
+      : {};
+    const gOut = runTool('cleanup-ghost.cjs', gEnv);
     const gm = gOut.match(/RESULT=ARCHIVED:(\d+)/);
     ghostsArchived = gm ? Number(gm[1]) : 0;
-    toolNotes.push(...gOut.split('\n').filter((l) => /RESULT=|三条证明|归档目录|!!/.test(l)).map((l) => '残骸 ' + l.trim()));
+    toolNotes.push(...gOut.split('\n').filter((l) => /RESULT=|三条证明|归档目录|!!|跳过/.test(l)).map((l) => '残骸 ' + l.trim()));
   }
 
   const summary = {

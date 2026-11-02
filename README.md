@@ -36,17 +36,19 @@ DeepSeek Harness（DSH）把每个对话存成 `~/.dsh/sessions/<工程>/<会话
 | `audit-backup-superset.cjs` | 备份清理器（fail-closed）：只有证明"现盘是备份的超集、且副本里的每条真用户消息在全库都有落点"才删；判不了的保留。曾以此回收 ~400MB 且零丢失 |
 | `migrate-tmp-rename.cjs` | 把历史脚本的 `writeFileSync(tmp)+renameSync` 一行迁移到闸门 |
 | `repair-fork-stub.cjs` | **E 类**修复：分支继承段结尾是未闭合轮时，调宿主自己的 `repair.js#openTurnClosers(prefix,{kind:'forked'})` 补一行收口。只插一行 + 纯 seq 平移，自带无损证明与悬空引用检查，自证不过就拒绝落盘 |
-| `cleanup-ghost.cjs` | 归档"无 cwd 的分支子会话残骸"（宿主读历史时对 `header.cwd===undefined` 直接判 `session/not-found`，这类会话点开必红字）。整目录 move + `manifest.json` + `rollback.ps1`，逐条记 sha256 与三条证明，**不删除**。带**年龄闸**（`DSH_GHOST_MIN_AGE_MIN`，默认 10 分钟）：刚被写过的会话一律不动 |
+| `cleanup-ghost.cjs` | 归档"无 cwd 的分支子会话残骸"（宿主读历史时对 `header.cwd===undefined` 直接判 `session/not-found`，这类会话点开必红字）。整目录 move + `manifest.json` + `rollback.ps1`，逐条记 sha256 与三条证明，**不删除**。带**年龄闸**（`DSH_GHOST_MIN_AGE_MIN`，默认 10 分钟）与可选的**健康闸**（`DSH_GHOST_REQUIRE_HEALTHY=1`：日志过不了完整读盘链就不碰）。宿主在线时 `session-doctor` 用 30 分钟 + 健康闸跑它——2026-11-02 实测：开机后 13 分钟宿主已在跑，只读闸门让 6 条残骸白躺三天 |
 | `fix-mid-system-message.cjs` | 修「中途 `system/message` 没有受保护头」。**实测只摘除走得通**：补一条**带原内容/原轮步**的头会在更深一层撞 `compaction/summary shadowedSeqs do not name an exact current surface span`。摘除必须**完整重映射**引用——`sourceEventSeqs` 是挂在**事件根上的数字数组**，只走对象属性会整批漏掉。代价：丢那条系统提示副本（实测 7,107 字节，宿主恢复时按当前模型重生成）；正文核对 144 user / 8,429 assistant / 3,895 tool 一条不少 |
 | `fix-head.cjs` + `lib/head-class.cjs` | 同一病灶的第二条路线（**并行实现，未在真件上跑过**）：插一条**空头** `system/message`（`content:[]`、`kind:system-prompt`，与插件 `convert/events.mjs` 的 `pushSystemHead` 同形）、摘掉不在头部的 system/message、把指向被摘事件的 `surfaceOp.replace` 改指新头，再做全量重映射。适合要把日志修成"健康导入会话同形"的场合。注意它按自己的固定根找会话，不读 `DSH_SESSIONS`，隔离测试要先改路径 |
 | `test-repair-fork-stub.cjs` | E 类工具的合成回归测试（自带负控制）。`node test-repair-fork-stub.cjs`，退出码即结论 |
 | `test-doctor-selfheal.cjs` | `--fix-safe` 的端到端测试：三种合成夹具，断言"坏档修好、残骸归档、顶层会话一字节不动、A/C 不被顺手跑、年龄闸生效、可幂等重跑" |
+| `test-live-ghost-archive.cjs` | **宿主在线**那一档的测试：健康冷残骸（2 小时前）被归档、E 类坏档一字节不动、顶层会话不变；断言 `hostAlive===true` 时才成立 |
 
 ## 回归测试（改过任何一件都必须重跑）
 
 ```
 node test-repair-fork-stub.cjs     # 退出码 0 = 通过
 node test-doctor-selfheal.cjs      # 退出码 0 = 通过
+node test-live-ghost-archive.cjs   # 退出码 0 = 通过（需要宿主在跑）
 node qa-check.cjs                  # 仓库自带隐私/产物自检
 ```
 

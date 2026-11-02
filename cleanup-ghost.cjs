@@ -50,6 +50,13 @@ function scan(projectsRoot) {
     try { mtimeMs = fs.statSync(l.file).mtimeMs; } catch { continue; }
     const ageMin = (now - mtimeMs) / 60000;
     if (ageMin < MIN_AGE_MIN) { skipped.push({ ...l, head, ageMin }); continue; }
+    // 健康闸：只在"宿主还活着"时由 session-doctor 打开（DSH_GHOST_REQUIRE_HEALTHY=1）。
+    // 半写/坏档的日志可能是正在被写的半成品，一律不碰——它们的修复要等离线。
+    if (process.env.DSH_GHOST_REQUIRE_HEALTHY === '1') {
+      let ok = false;
+      try { ok = V.verifyFile(l.file).ok; } catch { ok = false; }
+      if (!ok) { skipped.push({ ...l, head, ageMin, unhealthy: true }); continue; }
+    }
     found.push({ ...l, head });
   }
   return { found, skipped };
